@@ -133,6 +133,8 @@ cp example.env .env
 - `DAILY_FETCH_DAYS` 请保持 `30`：国网页面「近 7 天」只有每日总用电量，没有峰谷平尖分时
 - Web 控制台修改 `.env` 后，Docker 中需要重建容器才会生效
 - 版本号规则：`2.1.1-be.N` 表示基于原作者 2.1.1 的第 N 个改进版
+- 发布新版本：在 `.github/fork-releases/` 下新增 `v<版本号>.md`（内容即发布说明），通过 PR 合并到 `my-custom`，
+  会自动创建标签、Release 并构建同名镜像
 
 ---
 

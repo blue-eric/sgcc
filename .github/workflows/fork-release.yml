@@ -1,0 +1,72 @@
+# blue-eric 改进版：通过 PR 发布版本
+#
+# 发布新版本的方法：在 .github/fork-releases/ 下新增 v<版本号>.md（内容即发布说明），
+# 通过 PR 合并到 my-custom。合并后自动：
+#   1. 创建 Git 标签 v<版本号> 和对应的 GitHub Release（说明取自该文件）
+#   2. 构建并发布镜像 ghcr.io/blue-eric/sgcc_electricity:<版本号>（同时更新 latest）
+# 标签已存在时跳过，不会重复发布；修改已有的说明文件不会触发发布。
+name: Fork - 发布版本
+
+on:
+  push:
+    branches:
+      - my-custom
+    paths:
+      - '.github/fork-releases/v*.md'
+
+jobs:
+  release:
+    if: github.repository == 'blue-eric/sgcc_electricity'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.find.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 找出本次新增的发布说明
+        id: find
+        run: |
+          FILES="$(git diff --name-only --diff-filter=A '${{ github.event.before }}' '${{ github.sha }}' -- '.github/fork-releases/v*.md')"
+          echo "新增的发布说明: ${FILES:-无}"
+          COUNT="$(printf '%s\n' "$FILES" | grep -c . || true)"
+          if [ "$COUNT" -gt 1 ]; then
+            echo "::error::一次只能发布一个版本，本次新增了 ${COUNT} 个说明文件"
+            exit 1
+          fi
+          if [ -z "$FILES" ]; then
+            echo "没有新增发布说明，跳过"
+            exit 0
+          fi
+          TAG="$(basename "$FILES" .md)"
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "标签 ${TAG} 已存在，跳过"
+            exit 0
+          fi
+          echo "file=${FILES}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: 创建标签和 Release
+        if: steps.find.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create '${{ steps.find.outputs.tag }}' \
+            --target '${{ github.sha }}' \
+            --title '${{ steps.find.outputs.tag }}' \
+            --notes-file '${{ steps.find.outputs.file }}' \
+            --latest
+
+  image:
+    needs: release
+    if: needs.release.outputs.version != ''
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/fork-publish.yml
+    with:
+      version: ${{ needs.release.outputs.version }}
