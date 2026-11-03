@@ -114,14 +114,14 @@ cp example.env .env
 
 ### 已提交给原作者的修复
 
-以下修复已（或将）以独立 PR 提交给原作者，合并后会在此标注：
+以下修复已以独立 PR 提交给原作者，并已合并到原版：
 
-| 修复 | 分支 | 状态 |
+| 修复 | 原作者 PR | 状态 |
 |---|---|---|
-| 验证码确认后元素失效被误判为登录失败 | `fix/captcha-stale-element` | 待合并 |
-| 切换户号时下拉框为空，刷新页面后重试 | `fix/switch-user-empty-dropdown` | 待合并 |
-| 月度/年度总用量与总金额防止被 0 值覆盖 | `fix/db-zero-overwrite` | 待合并 |
-| 年度/月度用电等待改用 `visibility_of_element_located` | `fix/yearly-monthly-wait` | 待合并 |
+| 验证码确认后元素失效被误判为登录失败 | [Poiig/sgcc_electricity#4](https://github.com/Poiig/sgcc_electricity/pull/4) | ✅ 已合并 |
+| 切换户号时下拉框为空，刷新页面后重试 | [Poiig/sgcc_electricity#5](https://github.com/Poiig/sgcc_electricity/pull/5) | ✅ 已合并 |
+| 月度/年度总用量与总金额防止被 0 值覆盖 | [Poiig/sgcc_electricity#6](https://github.com/Poiig/sgcc_electricity/pull/6) | ✅ 已合并 |
+| 年度/月度用电等待改用 `visibility_of_element_located` | [Poiig/sgcc_electricity#7](https://github.com/Poiig/sgcc_electricity/pull/7) | ✅ 已合并 |
 
 ### 问题反馈
 
