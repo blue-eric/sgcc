@@ -1,6 +1,6 @@
 # blue-eric 改进版：构建并发布镜像到 ghcr.io/blue-eric/sgcc_electricity
 #
-# - 只在 my-custom 分支更新代码、推送 v* 标签、或手动触发时运行
+# - 只在 my-custom 分支更新代码、推送 v* 标签、手动触发，或被 fork-release.yml 调用时运行
 # - 直接使用原作者公开的基础镜像（docker.io/poiigzhao/sgcc_electricity:base），
 #   不重建基础镜像，不需要 Docker Hub 账号或任何密钥
 # - 原作者的 docker-publish.yml 只在 master 分支触发，与本文件互不影响
@@ -18,9 +18,16 @@ on:
       - 'requirements.txt'
       - '.github/workflows/fork-publish.yml'
   workflow_dispatch:
+  # 由 fork-release.yml 发布版本时调用，传入版本号（如 2.1.1-be.1）
+  workflow_call:
+    inputs:
+      version:
+        description: '版本号（不带 v），作为镜像标签'
+        required: true
+        type: string
 
 concurrency:
-  group: fork-publish-${{ github.ref }}
+  group: fork-publish-${{ github.ref }}-${{ inputs.version || 'auto' }}
   cancel-in-progress: true
 
 jobs:
@@ -41,7 +48,10 @@ jobs:
         run: |
           REPO_LOWER="$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
           echo "repo_lower=${REPO_LOWER}" >> "$GITHUB_OUTPUT"
-          if [ "${{ github.ref_type }}" = "tag" ]; then
+          if [ -n "${{ inputs.version }}" ]; then
+            # 发布版本时由 fork-release.yml 传入版本号
+            TAG="${{ inputs.version }}"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
             # 推送标签（如 v2.1.1-be.1）时，镜像标签用版本号
             TAG="${{ github.ref_name }}"
             TAG="${TAG#v}"
