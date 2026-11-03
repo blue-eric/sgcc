@@ -32,8 +32,8 @@ concurrency:
 
 jobs:
   build-and-push:
-    # 只在 fork 中运行，避免被合并到原作者仓库后误触发
-    if: github.repository == 'blue-eric/sgcc_electricity'
+    # 只在 blue-eric 的 fork 中运行（不依赖仓库名），避免被合并到原作者仓库后误触发
+    if: github.repository_owner == 'blue-eric'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -46,7 +46,9 @@ jobs:
       - name: Prepare variables
         id: vars
         run: |
-          REPO_LOWER="$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+          # 镜像名固定为 blue-eric/sgcc_electricity，不随仓库名变化（仓库已改名为 blue-eric/sgcc，
+          # 镜像名保持不变，已部署的用户不用改配置）
+          REPO_LOWER="blue-eric/sgcc_electricity"
           echo "repo_lower=${REPO_LOWER}" >> "$GITHUB_OUTPUT"
           if [ -n "${{ inputs.version }}" ]; then
             # 发布版本时由 fork-release.yml 传入版本号

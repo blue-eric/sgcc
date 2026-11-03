@@ -67,15 +67,15 @@
 | 标签 | 说明 |
 |---|---|
 | `ghcr.io/blue-eric/sgcc_electricity:latest` | 最新版 |
-| `ghcr.io/blue-eric/sgcc_electricity:2.1.1-be.1` 等 | 正式版本（见 [Releases](https://github.com/blue-eric/sgcc_electricity/releases)） |
+| `ghcr.io/blue-eric/sgcc_electricity:2.1.1-be.1` 等 | 正式版本（见 [Releases](https://github.com/blue-eric/sgcc/releases)） |
 | `ghcr.io/blue-eric/sgcc_electricity:20261024-1530` 等 | 每次构建的日期版本，出问题时可回退 |
 
 只需要 `docker-compose.fork.yml` 和 `.env` 两个文件：
 
 ```bash
 mkdir sgcc_electricity && cd sgcc_electricity
-curl -o docker-compose.yml https://raw.githubusercontent.com/blue-eric/sgcc_electricity/my-custom/docker-compose.fork.yml
-curl -o .env https://raw.githubusercontent.com/blue-eric/sgcc_electricity/my-custom/example.env
+curl -o docker-compose.yml https://raw.githubusercontent.com/blue-eric/sgcc/my-custom/docker-compose.fork.yml
+curl -o .env https://raw.githubusercontent.com/blue-eric/sgcc/my-custom/example.env
 # 按注释编辑 .env 后启动
 docker compose up -d
 ```
@@ -89,8 +89,8 @@ docker compose up -d
 不想用本仓库镜像时，可以继续使用原作者镜像，把本仓库的 `scripts` 目录挂载进容器覆盖自带代码：
 
 ```bash
-git clone -b my-custom https://github.com/blue-eric/sgcc_electricity.git
-cd sgcc_electricity
+git clone -b my-custom https://github.com/blue-eric/sgcc.git
+cd sgcc
 cp example.env .env
 ```
 
@@ -125,7 +125,7 @@ cp example.env .env
 
 ### 问题反馈
 
-本仓库为个人业余维护，尽力而为。请在 [Issues](https://github.com/blue-eric/sgcc_electricity/issues) 按模板反馈，并隐藏账号、户号等敏感信息；
+本仓库为个人业余维护，尽力而为。请在 [Issues](https://github.com/blue-eric/sgcc/issues) 按模板反馈，并隐藏账号、户号等敏感信息；
 原版本身的问题请到 [Poiig/sgcc_electricity](https://github.com/Poiig/sgcc_electricity/issues) 反馈。
 
 ### 使用提示
