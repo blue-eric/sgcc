@@ -17,7 +17,7 @@ on:
 
 jobs:
   check:
-    if: github.repository == 'blue-eric/sgcc_electricity'
+    if: github.repository_owner == 'blue-eric'
     runs-on: ubuntu-latest
     strategy:
       matrix:

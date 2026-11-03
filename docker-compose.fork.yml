@@ -1,4 +1,4 @@
-# blue-eric/sgcc_electricity（改进版）部署文件
+# blue-eric/sgcc（改进版）部署文件
 #
 # 方式一（推荐）：直接使用本仓库镜像，只需要本文件和 .env
 #   docker compose -f docker-compose.fork.yml up -d
@@ -9,7 +9,7 @@
 services:
   sgcc_electricity_app:
     # 方式一：本仓库镜像（x86 / ARM 通用）
-    image: ghcr.io/blue-eric/sgcc_electricity:latest
+    image: ghcr.io/blue-eric/sgcc:latest
     # 方式二：原作者镜像
     # image: ghcr.io/poiig/sgcc_electricity:latest
     # image: ghcr.nju.edu.cn/poiig/sgcc_electricity:latest   # 原作者镜像国内加速

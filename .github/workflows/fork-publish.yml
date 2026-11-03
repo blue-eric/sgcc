@@ -1,4 +1,4 @@
-# blue-eric 改进版：构建并发布镜像到 ghcr.io/blue-eric/sgcc_electricity
+# blue-eric 改进版：构建并发布镜像到 ghcr.io/blue-eric/sgcc
 #
 # - 只在 my-custom 分支更新代码、推送 v* 标签、手动触发，或被 fork-release.yml 调用时运行
 # - 直接使用原作者公开的基础镜像（docker.io/poiigzhao/sgcc_electricity:base），
@@ -18,6 +18,11 @@ on:
       - 'requirements.txt'
       - '.github/workflows/fork-publish.yml'
   workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（不带 v，如 2.1.1-be.1），留空则用构建日期'
+        required: false
+        type: string
   # 由 fork-release.yml 发布版本时调用，传入版本号（如 2.1.1-be.1）
   workflow_call:
     inputs:
@@ -32,8 +37,8 @@ concurrency:
 
 jobs:
   build-and-push:
-    # 只在 fork 中运行，避免被合并到原作者仓库后误触发
-    if: github.repository == 'blue-eric/sgcc_electricity'
+    # 只在 blue-eric 的 fork 中运行（不依赖仓库名），避免被合并到原作者仓库后误触发
+    if: github.repository_owner == 'blue-eric'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -46,7 +51,8 @@ jobs:
       - name: Prepare variables
         id: vars
         run: |
-          REPO_LOWER="$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+          # 镜像名固定为 blue-eric/sgcc（与仓库名一致），写死而不取自仓库名，以后仓库改名也不会变
+          REPO_LOWER="blue-eric/sgcc"
           echo "repo_lower=${REPO_LOWER}" >> "$GITHUB_OUTPUT"
           if [ -n "${{ inputs.version }}" ]; then
             # 发布版本时由 fork-release.yml 传入版本号
@@ -95,13 +101,9 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Clean up old images (keep latest 10)
-        uses: actions/delete-package-versions@v5
-        continue-on-error: true
-        with:
-          package-name: ${{ github.event.repository.name }}
-          package-type: container
-          min-versions-to-keep: 10
+      # 不自动清理旧镜像：多架构镜像每次构建会产生多个「无标签」版本（各平台镜像、构建证明），
+      # 按数量清理会把较早的日期版本和正式版本一起删掉，删到无标签的平台镜像还会让镜像无法拉取。
+      # 公开镜像在 GHCR 上存储免费，需要清理时在 Packages 页面手动删除指定版本即可。
 
       - name: Summary
         run: |
