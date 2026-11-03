@@ -3,7 +3,7 @@
 # 发布新版本的方法：在 .github/fork-releases/ 下新增 v<版本号>.md（内容即发布说明），
 # 通过 PR 合并到 my-custom。合并后自动：
 #   1. 创建 Git 标签 v<版本号> 和对应的 GitHub Release（说明取自该文件）
-#   2. 构建并发布镜像 ghcr.io/blue-eric/sgcc_electricity:<版本号>（同时更新 latest）
+#   2. 构建并发布镜像 ghcr.io/blue-eric/sgcc:<版本号>（同时更新 latest）
 # 标签已存在时跳过，不会重复发布；修改已有的说明文件不会触发发布。
 name: Fork - 发布版本
 

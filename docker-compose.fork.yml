@@ -9,7 +9,7 @@
 services:
   sgcc_electricity_app:
     # 方式一：本仓库镜像（x86 / ARM 通用）
-    image: ghcr.io/blue-eric/sgcc_electricity:latest
+    image: ghcr.io/blue-eric/sgcc:latest
     # 方式二：原作者镜像
     # image: ghcr.io/poiig/sgcc_electricity:latest
     # image: ghcr.nju.edu.cn/poiig/sgcc_electricity:latest   # 原作者镜像国内加速

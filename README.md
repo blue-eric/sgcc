@@ -66,9 +66,9 @@
 
 | 标签 | 说明 |
 |---|---|
-| `ghcr.io/blue-eric/sgcc_electricity:latest` | 最新版 |
-| `ghcr.io/blue-eric/sgcc_electricity:2.1.1-be.1` 等 | 正式版本（见 [Releases](https://github.com/blue-eric/sgcc/releases)） |
-| `ghcr.io/blue-eric/sgcc_electricity:20261024-1530` 等 | 每次构建的日期版本，出问题时可回退 |
+| `ghcr.io/blue-eric/sgcc:latest` | 最新版 |
+| `ghcr.io/blue-eric/sgcc:2.1.1-be.1` 等 | 正式版本（见 [Releases](https://github.com/blue-eric/sgcc/releases)） |
+| `ghcr.io/blue-eric/sgcc:20261024-1530` 等 | 每次构建的日期版本，出问题时可回退 |
 
 只需要 `docker-compose.fork.yml` 和 `.env` 两个文件：
 
