@@ -95,13 +95,9 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Clean up old images (keep latest 10)
-        uses: actions/delete-package-versions@v5
-        continue-on-error: true
-        with:
-          package-name: ${{ github.event.repository.name }}
-          package-type: container
-          min-versions-to-keep: 10
+      # 不自动清理旧镜像：多架构镜像每次构建会产生多个「无标签」版本（各平台镜像、构建证明），
+      # 按数量清理会把较早的日期版本和正式版本一起删掉，删到无标签的平台镜像还会让镜像无法拉取。
+      # 公开镜像在 GHCR 上存储免费，需要清理时在 Packages 页面手动删除指定版本即可。
 
       - name: Summary
         run: |
