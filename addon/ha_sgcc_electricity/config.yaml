@@ -14,6 +14,7 @@ options:
   phone_number: ""
   password: ""
   ignore_user_id: ""
+  user_names: ""
   db_type: "sqlite"
   hass_url: "http://homeassistant:8123/"
   hass_token: ""
@@ -26,6 +27,7 @@ options:
   mqtt_device_id: "ha_sgcc_electricity"
   mqtt_device_name: "国家电网电费数据"
   job_start_time: "07:00"
+  republish_interval_minutes: 10
   run_on_startup: false
   captcha_solver: "local"
   llm_api_key: ""
@@ -41,10 +43,14 @@ options:
   push_url: ""
   wework_webhook_url: ""
   push_qrcode_url: ""
+  fetch_fail_alert: true
+  fetch_fail_alert_days: 2
+  fetch_health_check_time: "22:30"
 schema:
   phone_number: str
   password: password
   ignore_user_id: str?
+  user_names: str?
   db_type: list(sqlite|mysql|postgresql)
   hass_url: str
   hass_token: password?
@@ -57,6 +63,7 @@ schema:
   mqtt_device_id: str?
   mqtt_device_name: str?
   job_start_time: str
+  republish_interval_minutes: int(0,1440)?
   run_on_startup: bool
   captcha_solver: list(local|llm)
   llm_api_key: password?
@@ -72,3 +79,6 @@ schema:
   push_url: str?
   wework_webhook_url: str?
   push_qrcode_url: str?
+  fetch_fail_alert: bool?
+  fetch_fail_alert_days: int(1,30)?
+  fetch_health_check_time: str?

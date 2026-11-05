@@ -49,7 +49,13 @@ def main():
         VERSION = os.getenv("VERSION", "unknown")
         RETRY_TIMES_LIMIT = int(os.getenv("RETRY_TIMES_LIMIT", 5))
         JOB_TIMES_PER_DAY = 1 if os.getenv("JOB_TIMES_PER_DAY", "2").strip() == "1" else 2
-        HA_REPUBLISH_INTERVAL_MINUTES = max(1, int(os.getenv("HA_REPUBLISH_INTERVAL_MINUTES", 5)))
+        # 缓存重推间隔：上游 REPUBLISH_INTERVAL_MINUTES（默认 10，0=禁用）；
+        # 兼容本仓库旧配置 HA_REPUBLISH_INTERVAL_MINUTES（未设置新配置时生效）
+        _republish_raw = (os.getenv("REPUBLISH_INTERVAL_MINUTES") or os.getenv("HA_REPUBLISH_INTERVAL_MINUTES") or "10").strip()
+        try:
+            REPUBLISH_INTERVAL_MINUTES = max(0, int(_republish_raw))
+        except ValueError:
+            REPUBLISH_INTERVAL_MINUTES = 10
         
         logger_init(LOG_LEVEL)
         start_web_dashboard_if_enabled()
@@ -113,10 +119,23 @@ def main():
         else:
             logging.info(f"定时任务已注册，每天 {parsed_time.strftime('%H:%M')} 执行一次")
     
-    # 定时重发缓存数据，防止HA重启后数据丢失（不会登录国网）
+    # 定时从缓存重推 HA 数据，防止 HA 重启后传感器丢失（默认 10 分钟，0=禁用）
     if updator:
-        schedule.every(HA_REPUBLISH_INTERVAL_MINUTES).minutes.do(updator.republish)
-        logging.info(f"HA 数据重发间隔: {HA_REPUBLISH_INTERVAL_MINUTES} 分钟")
+        republish_interval = REPUBLISH_INTERVAL_MINUTES
+        if republish_interval > 0:
+            schedule.every(republish_interval).minutes.do(updator.republish)
+            logging.info("缓存重推已启用，每 %s 分钟一次（REPUBLISH_INTERVAL_MINUTES）", republish_interval)
+        else:
+            logging.info("缓存重推已禁用（REPUBLISH_INTERVAL_MINUTES=0）")
+
+    # 日终巡检：当天仍未成功且连续失败达阈值则推送告警（默认 22:30）
+    health_check_at = os.getenv("FETCH_HEALTH_CHECK_TIME", "22:30").strip() or "22:30"
+    try:
+        datetime.strptime(health_check_at, "%H:%M")
+        schedule.every().day.at(health_check_at).do(run_fetch_health_check)
+        logging.info("抓取健康巡检已启用，每天 %s（FETCH_HEALTH_CHECK_TIME）", health_check_at)
+    except ValueError:
+        logging.warning("FETCH_HEALTH_CHECK_TIME=%s 无效，跳过日终巡检", health_check_at)
     
     # 启动时抓取策略：
     # JOB_START_TIME=off   → 何时登录国网完全由外部决定：启动时不抓取（RUN_ON_STARTUP 也不生效），只恢复 HA 缓存
@@ -150,22 +169,49 @@ def run_task(data_fetcher: DataFetcher):
         if not acquired:
             logging.warning("跳过定时同步：已有抓取任务正在运行")
             return
+        last_error = ""
         for retry_times in range(1, RETRY_TIMES_LIMIT + 1):
             try:
-                data_fetcher.fetch()
+                result = data_fetcher.fetch()
+                # fetch() 在登录失败、取不到户号时不抛异常而是返回结果，这里按失败记录（不额外重试，避免反复登录）
+                if isinstance(result, dict) and (not result.get("login") or result.get("error")
+                                                 or (result.get("failed") and not result.get("ok"))):
+                    reason = result.get("error") or f"所有户号同步失败: {', '.join(result.get('failed', []))}"
+                    mark_fetch_finished(False, f"定时同步失败: {reason}")
+                    try:
+                        from notify import push_fetch_failed
+                        push_fetch_failed(retry_times)
+                    except Exception as notify_exc:
+                        logging.warning("发送失败通知时出错: %s", notify_exc)
+                    return
                 mark_fetch_finished(True, "定时同步完成")
                 return
             except Exception as e:
-                logging.error(f"数据同步任务失败: [{e}]，剩余重试次数 {RETRY_TIMES_LIMIT - retry_times}")
+                last_error = str(e).strip() or e.__class__.__name__
+                logging.error(
+                    "数据同步任务失败: [%s]，剩余重试次数 %s",
+                    last_error,
+                    RETRY_TIMES_LIMIT - retry_times,
+                )
                 continue
-        mark_fetch_finished(False, "定时同步重试次数已用尽")
-        # 重试耗尽后发送失败通知
+        reason = last_error or "未知错误"
+        mark_fetch_finished(False, f"定时同步失败（重试耗尽）: {reason}")
+        # 重试耗尽后立即发送失败通知（连续多日失败另由 fetch_health 告警）
         try:
             from notify import push_fetch_failed
             push_fetch_failed(RETRY_TIMES_LIMIT)
         except Exception as notify_exc:
             logging.warning("发送失败通知时出错: %s", notify_exc)
 
+
+def run_fetch_health_check():
+    """日终检查当日是否已成功同步，连续失败则告警。"""
+    try:
+        from fetch_health import check_daily_health
+
+        check_daily_health()
+    except Exception as exc:
+        logging.warning("抓取健康巡检失败（非致命）: %s", exc)
 
 def logger_init(level: str):
     logger = logging.getLogger()
