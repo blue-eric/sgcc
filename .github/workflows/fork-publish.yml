@@ -65,6 +65,13 @@ jobs:
             TAG="$(TZ=Asia/Shanghai date +%Y%m%d-%H%M)"
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          # 只有 my-custom 分支和 v* 标签更新 latest；其他分支（如待验证的同步分支）手动构建时只打指定标签，
+          # 便于先拉取测试镜像试用，不影响正在使用 latest 的部署
+          if [ "${{ github.ref }}" = "refs/heads/my-custom" ] || [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "update_latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "update_latest=false" >> "$GITHUB_OUTPUT"
+          fi
           echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
           echo "镜像: ghcr.io/${REPO_LOWER}:${TAG}"
 
@@ -89,7 +96,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ steps.vars.outputs.repo_lower }}:latest
+            ${{ steps.vars.outputs.update_latest == 'true' && format('ghcr.io/{0}:latest', steps.vars.outputs.repo_lower) || '' }}
             ghcr.io/${{ steps.vars.outputs.repo_lower }}:${{ steps.vars.outputs.tag }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
@@ -109,5 +116,7 @@ jobs:
         run: |
           echo "### 镜像已发布" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- \`ghcr.io/${{ steps.vars.outputs.repo_lower }}:latest\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.vars.outputs.update_latest }}" = "true" ]; then
+            echo "- \`ghcr.io/${{ steps.vars.outputs.repo_lower }}:latest\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "- \`ghcr.io/${{ steps.vars.outputs.repo_lower }}:${{ steps.vars.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
