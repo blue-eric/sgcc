@@ -107,6 +107,15 @@ def mark_fetch_finished(success: bool, message: str = "", result: Optional[str] 
     write_fetch_state({"status": "success" if success else "failed", **final})
     _release_lock_file()
     write_fetch_state({"status": "idle", **final})
+    # 落盘每日成败并在连续多日失败时推送告警（上游 fetch_health）
+    try:
+        from fetch_health import record_fetch_result
+
+        record_fetch_result(success, message=final["message"], source=final["source"])
+    except Exception as exc:
+        import logging
+
+        logging.warning("更新抓取健康记录失败（非致命）: %s", exc)
 
 
 def is_fetch_running() -> bool:

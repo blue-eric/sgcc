@@ -14,13 +14,8 @@
 
 ### 与原版的区别
 
-**问题修复**
-- 验证码确认后页面元素失效（stale），实际已登录成功却被误判为登录失败
-- 切换户号时下拉框偶尔为空导致该户号被跳过：自动刷新页面重试，失败时保存截图
-- 配置 `USER_NAMES` 后切换户号可能匹配不到选项
-- 月度/年度的总用电量、总电费被页面未加载完成时抓到的 0 覆盖
-- 年度/月度页面加载慢时获取数据失败
-- 登录失败、取不到户号时被记为「同步成功」且不会重试
+**问题修复**（验证码 stale 误判、户号下拉框为空、月/年数据被 0 覆盖、年月页面等待这 4 项已合并到原版，见下方列表）
+- 登录失败、取不到户号、所有户号都失败时被记为「同步成功」（定时同步和外部触发都会如实记为失败并通知）
 - 户号多、同步超过 1 小时时，同步锁被误判为超时而重置
 - 容器与数据库时区不一致时，Web 控制台的同步冷却时间被算成数小时
 
@@ -28,11 +23,10 @@
 
 | 配置项 | 作用 |
 |---|---|
-| `USER_NAMES` | 户号显示名映射，例如 `户号1:我家住宅,户号2:充电桩` |
 | `WEWORK_MSG_FORMAT` | 企业微信消息格式：`text` / `markdown`（默认）/ `markdown_v2` |
 | `WEWORK_PUSH_SUMMARY` | 同步成功后是否推送数据汇总；同步失败通知、登录二维码不受影响 |
 | `JOB_TIMES_PER_DAY` | 每天定时同步次数：`1` 或 `2`（默认） |
-| `HA_REPUBLISH_INTERVAL_MINUTES` | 向 Home Assistant 重发数据的间隔（分钟） |
+| `HA_REPUBLISH_INTERVAL_MINUTES` | 旧配置，仍兼容；原版已新增同类配置 `REPUBLISH_INTERVAL_MINUTES`（推荐改用） |
 | `LLM_TIMEOUT` / `LLM_MAX_RETRIES` / `LLM_MAX_TOKENS` | 大模型识别验证码的超时、重试次数、最大输出长度；兼容只接受 `max_completion_tokens` 的模型 |
 | `JOB_START_TIME=off` | 关闭内部定时同步，启动时也不登录国网，改由外部程序调用接口按需触发（见下方「外部触发同步」）；Web 控制台仍可手动同步 |
 | `FETCH_RUN_RETRY_WAIT_MINUTES` | 外部触发要求整轮重试时，两轮之间等待的分钟数（默认 10） |
@@ -114,7 +108,7 @@ cp example.env .env
 
 ### 已提交给原作者的修复
 
-以下修复已以独立 PR 提交给原作者，并已合并到原版：
+以下修复和功能已以独立 PR 提交给原作者，并已合并到原版：
 
 | 修复 | 原作者 PR | 状态 |
 |---|---|---|
@@ -122,6 +116,7 @@ cp example.env .env
 | 切换户号时下拉框为空，刷新页面后重试 | [Poiig/sgcc_electricity#5](https://github.com/Poiig/sgcc_electricity/pull/5) | ✅ 已合并 |
 | 月度/年度总用量与总金额防止被 0 值覆盖 | [Poiig/sgcc_electricity#6](https://github.com/Poiig/sgcc_electricity/pull/6) | ✅ 已合并 |
 | 年度/月度用电等待改用 `visibility_of_element_located` | [Poiig/sgcc_electricity#7](https://github.com/Poiig/sgcc_electricity/pull/7) | ✅ 已合并 |
+| 新增 `USER_NAMES`，为户号自定义名称（并可启用阶梯用电） | [Poiig/sgcc_electricity#8](https://github.com/Poiig/sgcc_electricity/pull/8) | ✅ 已合并（原作者另加了热重载） |
 
 ### 问题反馈
 
@@ -297,12 +292,17 @@ Docker Compose 方式通过 `.env` 文件配置，完整配置项见 `example.en
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `JOB_START_TIME` | `09:30` | 每天同步开始时间（程序会在该时间及 +12 小时各执行一次） |
+| `REPUBLISH_INTERVAL_MINUTES` | `10` | 从缓存重推 HA 传感器间隔（分钟），`0` 禁用；INFO 只报成功，明细需 `LOG_LEVEL=DEBUG` |
+| `FETCH_FAIL_ALERT` | `true` | 连续多日抓取失败时推送企微告警（需 `WEWORK_WEBHOOK_URL`） |
+| `FETCH_FAIL_ALERT_DAYS` | `2` | 连续失败自然日达到该天数后告警，告警含近期失败原因 |
+| `FETCH_HEALTH_CHECK_TIME` | `22:30` | 日终巡检时刻：当天仍未成功则按阈值告警 |
 | `RUN_ON_STARTUP` | `false` | Docker 启动后立即登录抓取 |
 | `CAPTCHA_SOLVER` | `local` | 验证码识别（推荐 `llm`，详见下方说明） |
 | `DB_TYPE` | sqlite | 数据库类型（sqlite / mysql / postgresql） |
 | `LOGIN_METHOD` | password | 登录方式（password / qrcode） |
 | `LOGIN_FALLBACK` | qrcode | 登录失败备选（qrcode / none） |
 | `IGNORE_USER_ID` | 空 | 忽略的户号（逗号分隔） |
+| `USER_NAMES` | 空 | 户号名称，如 `户号1:我家住宅,户号2:充电桩`；未配置时从国网网站获取。名称含「住宅」的户号才会抓取阶梯用电 |
 | `WEB_DASHBOARD` | true | 启用 Web 控制台 |
 | `PUSH_TYPE` | none | 通知方式（none / pushplus / urlpush / wework） |
 | `DATA_RETENTION_DAYS` | 365 | 数据库记录保留天数，0 表示永久保留 |

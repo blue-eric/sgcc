@@ -53,17 +53,14 @@ class DataFetcher:
         self.IGNORE_USER_ID = [uid.strip() for uid in os.getenv("IGNORE_USER_ID", "xxxxx,xxxxx").split(",") if uid.strip()]
         self.QR_CODE_LOGIN_WAIT_COUNT = int(os.getenv("QR_CODE_LOGIN_WAIT_COUNT", 7))
         self.QR_CODE_LOGIN_WAIT_TIME_INTERVAL_UNIT = int(os.getenv("QR_CODE_LOGIN_WAIT_TIME_INTERVAL_UNIT", 10))
-        # 用户名映射: 优先读取 USER_NAMES 手动配置，再由 _get_user_ids 从网站自动填充
-        self._user_name_map = {}
-        # 户号 -> 网站下拉框选项原文，仅用于切换户号时匹配选项（不受 USER_NAMES 影响）
+        # 用户名映射: 优先使用 USER_NAMES 手动配置，未配置的户号再由 _get_user_ids 从网站自动填充
+        self._user_name_map = self._parse_user_names(os.getenv("USER_NAMES", ""))
+        # 记录来自 USER_NAMES 的户号，热重载时用于区分「删配置」与「网站自动填充」
+        self._user_names_from_config = set(self._user_name_map.keys())
+        if self._user_name_map:
+            logging.info(f"已从 USER_NAMES 加载 {len(self._user_name_map)} 个户号名称: {self._user_name_map}")
+        # 户号 -> 网站下拉框选项原文，切换户号时按原文匹配（USER_NAMES 的自定义名称不会出现在下拉框里）
         self._option_label_map = {}
-        _user_names_env = os.getenv("USER_NAMES", "")
-        if _user_names_env:
-            for pair in _user_names_env.split(","):
-                if ":" in pair:
-                    uid, uname = pair.split(":", 1)
-                    self._user_name_map[uid.strip()] = uname.strip()
-            logging.info(f"已从 USER_NAMES 加载 {len(self._user_name_map)} 个用户名映射: {self._user_name_map}")
         # 本地运行用更短的步骤等待
         self._step_wait = 2 if 'PYTHON_IN_DOCKER' not in os.environ else self.RETRY_WAIT_TIME_OFFSET_UNIT
         logging.info(f"数据抓取器初始化完成: 用户={username}, 步骤等待={self._step_wait}s, "
@@ -85,6 +82,12 @@ class DataFetcher:
         self.IGNORE_USER_ID = [
             uid.strip() for uid in os.getenv("IGNORE_USER_ID", "").split(",") if uid.strip()
         ]
+        # USER_NAMES 变更：新配置覆盖；从配置中移除的户号清掉自定义名，下次抓取再从网站补
+        new_user_names = self._parse_user_names(os.getenv("USER_NAMES", ""))
+        for uid in self._user_names_from_config - set(new_user_names):
+            self._user_name_map.pop(uid, None)
+        self._user_name_map.update(new_user_names)
+        self._user_names_from_config = set(new_user_names.keys())
         self.QR_CODE_LOGIN_WAIT_COUNT = int(
             os.getenv("QR_CODE_LOGIN_WAIT_COUNT", self.QR_CODE_LOGIN_WAIT_COUNT)
         )
@@ -97,10 +100,11 @@ class DataFetcher:
             self.db_type = new_db_type
             self._init_db()
         logging.info(
-            "DataFetcher 配置已热重载: 用户=%s, CAPTCHA_SOLVER=%s, DB=%s",
+            "DataFetcher 配置已热重载: 用户=%s, CAPTCHA_SOLVER=%s, DB=%s, USER_NAMES=%s",
             self._username,
             self._captcha_solver,
             self.db_type,
+            len(self._user_names_from_config),
         )
     
     def _init_db(self):
@@ -603,64 +607,207 @@ class DataFetcher:
             return self._qr_login(driver, reason=reason)
         return False
 
-    def _qr_login(self, driver, reason: str = "扫码登录") -> bool:
-        logging.info("切换到二维码登录模式")
-        # 尝试切换到二维码标签（如果已经在二维码页面则跳过）
+    def _dismiss_login_overlays(self, driver) -> None:
+        """关掉验证码弹层等遮挡，避免切不到二维码登录页。"""
         try:
-            qr_tab = driver.find_element(By.CLASS_NAME, 'qr_code')
-            if qr_tab.is_displayed():
-                driver.execute_script("arguments[0].click();", qr_tab)
-                logging.info("已切换到二维码登录标签")
-        except Exception:
-            logging.info("当前已在二维码登录页面或无需切换")
+            if getattr(self, "tencent_captcha", None) and self.tencent_captcha.has_captcha(driver):
+                driver.execute_script(
+                    """
+                    document.querySelectorAll(
+                      '#tCaptchaDyContent, .tencent-captcha-dy__warp, .tencent-captcha__wrapper, .tencent-captcha-dy__wrapper'
+                    ).forEach(function(el){ try { el.remove(); } catch(e) {} });
+                    """
+                )
+                logging.info("已移除残留验证码弹层，准备切换扫码登录")
+        except Exception as exc:
+            logging.debug("移除验证码弹层失败（可忽略）: %s", exc)
+        for btn in driver.find_elements(By.CLASS_NAME, "button_confirm"):
+            try:
+                driver.execute_script("arguments[0].click();", btn)
+            except Exception:
+                pass
+
+    def _prepare_qr_login_page(self, driver) -> None:
+        """刷新登录页并点到二维码标签；用短显式等待，避免缺元素时被隐式等待拖很久。"""
+        self._dismiss_login_overlays(driver)
+        try:
+            driver.get(LOGIN_URL)
+            WebDriverWait(driver, min(20, self.DRIVER_IMPLICITY_WAIT_TIME)).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+            logging.info("已重新打开登录页以切换扫码")
+        except Exception as exc:
+            logging.warning("重新打开登录页失败，继续尝试当前页: %s", exc)
 
         time.sleep(self._step_wait)
-        # 获取登录二维码
-        qrElement = WebDriverWait(driver, self.DRIVER_IMPLICITY_WAIT_TIME).until(
-            EC.visibility_of_element_located((By.XPATH, "//div[@class='sweepCodePic']//img")))
-        logging.info("找到二维码图片元素")
-        img_src = qrElement.get_attribute('src')
+        saved_wait = 0
+        try:
+            saved_wait = driver.timeouts.implicit_wait
+        except Exception:
+            pass
+        driver.implicitly_wait(0)
+        try:
+            tab_selectors = [
+                (By.CLASS_NAME, "qr_code"),
+                (By.CSS_SELECTOR, ".qr_code"),
+                (By.XPATH, "//*[contains(@class,'qr_code') or contains(text(),'扫码') or contains(text(),'二维码')]"),
+            ]
+            switched = False
+            for by, sel in tab_selectors:
+                try:
+                    tabs = driver.find_elements(by, sel)
+                    for tab in tabs:
+                        try:
+                            if tab.is_displayed():
+                                driver.execute_script("arguments[0].click();", tab)
+                                logging.info("已切换到二维码登录标签 (%s)", sel)
+                                switched = True
+                                break
+                        except Exception:
+                            continue
+                    if switched:
+                        break
+                except Exception:
+                    continue
+            if not switched:
+                logging.info("未点到二维码标签，尝试直接查找二维码区域")
+        finally:
+            try:
+                driver.implicitly_wait(saved_wait)
+            except Exception:
+                pass
+        time.sleep(self._step_wait)
 
-        if img_src.startswith('data:image'):
-            base64_data = img_src.split(',')[1]
-            img_screenshot = base64.b64decode(base64_data)
-        else:
-          logging.info('二维码图片非 base64 格式, 使用截图方式获取')
-          img_screenshot = qrElement.screenshot_as_png
+    def _extract_login_qr_bytes(self, driver) -> Optional[bytes]:
+        """从页面提取登录二维码 PNG；失败时回退整页截图，尽量保证能推送。"""
+        img_selectors = [
+            "//div[@class='sweepCodePic']//img",
+            "//div[contains(@class,'sweepCode')]//img",
+            "//div[contains(@class,'qr')]//img",
+            "//img[contains(@src,'data:image')]",
+        ]
+        wait_s = min(15, max(5, self.DRIVER_IMPLICITY_WAIT_TIME // 4))
+        for xpath in img_selectors:
+            try:
+                qr_el = WebDriverWait(driver, wait_s).until(
+                    EC.visibility_of_element_located((By.XPATH, xpath))
+                )
+                logging.info("找到二维码图片元素: %s", xpath)
+                img_src = (qr_el.get_attribute("src") or "").strip()
+                if img_src.startswith("data:image") and "," in img_src:
+                    return base64.b64decode(img_src.split(",", 1)[1])
+                logging.info("二维码图片非 base64 格式, 使用元素截图")
+                png = qr_el.screenshot_as_png
+                if png:
+                    return png
+            except Exception:
+                continue
 
-        from const import get_data_dir
-        qr_path = os.path.join(get_data_dir(), 'login_qr_code.png')
-        with open(qr_path, "wb") as f:
-            f.write(img_screenshot)
-            logging.info(f"二维码已保存到 {qr_path}, 请扫描登录")
+        logging.warning("未定位到二维码 img，尝试整页截图作为兜底推送")
+        try:
+            png = driver.get_screenshot_as_png()
+            if png:
+                return png
+        except Exception as exc:
+            logging.warning("整页截图失败: %s", exc)
+        return None
+
+    def _qr_login(self, driver, reason: str = "扫码登录") -> bool:
+        """扫码登录兜底：先发文字提醒，再取二维码推送图片，最后等待扫码。"""
+        logging.info("切换到二维码登录模式")
+        # 先发文字，避免取图失败/浏览器崩溃时用户完全收不到 webhook
+        push_login_qrcode = None
+        push_login_need_scan = None
+        try:
+            from notify import push_login_need_scan as _push_need, push_login_qrcode as _push_qr
+            push_login_need_scan, push_login_qrcode = _push_need, _push_qr
+        except Exception as exc:
+            logging.warning("加载通知模块失败: %s", exc)
+
+        if push_login_need_scan is not None:
+            try:
+                push_login_need_scan(reason=reason)
+            except Exception as exc:
+                logging.warning("扫码文字提醒推送失败: %s", exc)
 
         try:
-            from notify import push_login_qrcode
-            if push_login_qrcode(img_screenshot, reason=reason):
-                logging.info("登录二维码已推送到通知渠道")
-            else:
-                logging.warning(
-                    "登录二维码推送失败或未配置渠道，请检查 WEWORK_WEBHOOK_URL 或 PUSH_QRCODE_URL"
+            self._prepare_qr_login_page(driver)
+            img_screenshot = self._extract_login_qr_bytes(driver)
+        except Exception as exc:
+            logging.error("准备扫码登录页或提取二维码失败: %s", exc)
+            img_screenshot = None
+
+        if not img_screenshot and push_login_need_scan is not None:
+            try:
+                push_login_need_scan(
+                    reason=reason,
+                    tip="获取二维码失败，请打开 Web 控制台或容器查看登录页截图",
                 )
-        except Exception as e:
-            logging.warning(f"二维码推送失败 (不影响扫码登录): {e}")
-        logging.info(f"等待扫码登录, 最长等待 {self.QR_CODE_LOGIN_WAIT_COUNT * self.QR_CODE_LOGIN_WAIT_TIME_INTERVAL_UNIT} 秒...")
+            except Exception as exc:
+                logging.warning("取图失败告警推送异常: %s", exc)
+
+        if img_screenshot:
+            from const import get_data_dir
+            qr_path = os.path.join(get_data_dir(), "login_qr_code.png")
+            try:
+                with open(qr_path, "wb") as f:
+                    f.write(img_screenshot)
+                logging.info("二维码已保存到 %s, 请扫描登录", qr_path)
+            except Exception as exc:
+                logging.warning("保存二维码文件失败: %s", exc)
+
+            if push_login_qrcode is not None:
+                try:
+                    # 文字已提前推过，这里只补图片，避免重复 markdown
+                    if push_login_qrcode(img_screenshot, reason=reason, with_text=False):
+                        logging.info("登录二维码已推送到通知渠道")
+                    else:
+                        logging.warning(
+                            "登录二维码推送失败或未配置渠道，请检查 WEWORK_WEBHOOK_URL 或 PUSH_QRCODE_URL"
+                        )
+                except Exception as e:
+                    logging.warning("二维码推送失败 (不影响扫码登录): %s", e)
+        else:
+            logging.error("未能获取登录二维码图片，无法推送扫码图")
+
+        wait_total = self.QR_CODE_LOGIN_WAIT_COUNT * self.QR_CODE_LOGIN_WAIT_TIME_INTERVAL_UNIT
+        logging.info("等待扫码登录, 最长等待 %s 秒...", wait_total)
         for i in range(1, self.QR_CODE_LOGIN_WAIT_COUNT + 1):
-            logging.info(f'等待扫码... [{i}/{self.QR_CODE_LOGIN_WAIT_COUNT}] (每 {self.QR_CODE_LOGIN_WAIT_TIME_INTERVAL_UNIT}s 检查一次)')
+            logging.info(
+                "等待扫码... [%s/%s] (每 %ss 检查一次)",
+                i, self.QR_CODE_LOGIN_WAIT_COUNT, self.QR_CODE_LOGIN_WAIT_TIME_INTERVAL_UNIT,
+            )
             time.sleep(self.QR_CODE_LOGIN_WAIT_TIME_INTERVAL_UNIT)
-            if (driver.current_url != LOGIN_URL):
-                logging.info("扫码登录成功!")
-                return True
-            else:
-                error = self._get_error_message(driver, "//div[@class='sweepCodePic']//div[@class='erwBg']//p")
+            try:
+                if driver.current_url != LOGIN_URL:
+                    logging.info("扫码登录成功!")
+                    return True
+                error = self._get_error_message(
+                    driver, "//div[@class='sweepCodePic']//div[@class='erwBg']//p"
+                )
                 if error is not None:
-                    logging.error(f'二维码登录失败: {error}')
+                    logging.error("二维码登录失败: %s", error)
                     return False
+            except Exception as exc:
+                logging.error("等待扫码时浏览器异常: %s", exc)
+                return False
 
         logging.warning("扫码登录超时, 未在规定时间内完成扫码")
-
         return False
         
+    @staticmethod
+    def _parse_user_names(raw: str) -> dict:
+        """解析 USER_NAMES：「户号:名称,户号:名称」，忽略空项和格式不对的项，户号和名称两侧的空格、引号会被去掉。"""
+        result = {}
+        for pair in (raw or "").strip().strip('"\'').split(","):
+            if ":" not in pair:
+                continue
+            uid, name = pair.split(":", 1)
+            uid, name = uid.strip().strip('"\''), name.strip().strip('"\'')
+            if uid and name:
+                result[uid] = name
+        return result
+
     def fetch(self) -> dict:
 
         """main logic here
@@ -979,7 +1126,7 @@ class DataFetcher:
 
     def _switch_to_user_once(self, driver, user_id: str, userid_index: int):
         """尝试切换一次。返回 True 成功；False 有选项但没切换成功；None 下拉框没有选项（可重试）。"""
-        # 优先用网站下拉框的选项原文匹配；USER_NAMES 自定义的名字不会出现在下拉框里
+        # 优先按下拉框选项原文匹配；USER_NAMES 的自定义名称不会出现在下拉框里
         option_label = self._option_label_map.get(user_id, "")
         user_name = self._user_name_map.get(user_id, "")
 
@@ -1021,7 +1168,7 @@ class DataFetcher:
                     driver.execute_script("arguments[0].click();", opt)
                     time.sleep(self._step_wait)
                     if self._get_current_userid(driver) == user_id:
-                        logging.info(f"已切换到用户 [{user_id}] ({text})")
+                        logging.info(f"已切换到用户 [{user_id}] ({user_name or text})")
                         return True
 
             if 0 <= userid_index < len(user_options):
