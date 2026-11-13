@@ -49,9 +49,8 @@ def main():
         VERSION = os.getenv("VERSION", "unknown")
         RETRY_TIMES_LIMIT = int(os.getenv("RETRY_TIMES_LIMIT", 5))
         JOB_TIMES_PER_DAY = 1 if os.getenv("JOB_TIMES_PER_DAY", "2").strip() == "1" else 2
-        # 缓存重推间隔：上游 REPUBLISH_INTERVAL_MINUTES（默认 10，0=禁用）；
-        # 兼容本仓库旧配置 HA_REPUBLISH_INTERVAL_MINUTES（未设置新配置时生效）
-        _republish_raw = (os.getenv("REPUBLISH_INTERVAL_MINUTES") or os.getenv("HA_REPUBLISH_INTERVAL_MINUTES") or "10").strip()
+        # 缓存重推间隔（分钟，默认 10，0=禁用）
+        _republish_raw = os.getenv("REPUBLISH_INTERVAL_MINUTES", "10").strip() or "10"
         try:
             REPUBLISH_INTERVAL_MINUTES = max(0, int(_republish_raw))
         except ValueError:
@@ -104,7 +103,8 @@ def main():
     external_trigger = JOB_START_TIME.strip().lower() in ("off", "false", "none", "0")
     if external_trigger:
         # 由外部程序（如 energy）通过 Web 控制台接口 /api/fetch 按需触发，不注册内部定时任务
-        logging.info("JOB_START_TIME=off：不注册定时同步，由外部调用 /api/fetch 或在 Web 控制台手动同步")
+        logging.info("JOB_START_TIME=off（外部触发模式）：不定时同步、启动时不登录国网，"
+                     "由外部调用 /api/fetch 或在 Web 控制台手动同步")
     else:
         # 生成随机延迟时间（-10分钟到+10分钟）
         random_delay_minutes = random.randint(-10, 10)
@@ -144,8 +144,8 @@ def main():
     if external_trigger:
         if updator:
             updator.republish()
-        logging.info("JOB_START_TIME=off：启动时不登录国网，等待外部触发或在 Web 控制台手动同步"
-                     + ("（RUN_ON_STARTUP=true 在此模式下不生效）" if RUN_ON_STARTUP else ""))
+        if RUN_ON_STARTUP:
+            logging.info("RUN_ON_STARTUP 在外部触发模式下不生效")
     elif RUN_ON_STARTUP:
         logging.info("RUN_ON_STARTUP 已启用，启动后立即执行登录与数据抓取...")
         run_task(fetcher)

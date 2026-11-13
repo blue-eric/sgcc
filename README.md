@@ -26,7 +26,6 @@
 | `WEWORK_MSG_FORMAT` | 企业微信消息格式：`text` / `markdown`（默认）/ `markdown_v2` |
 | `WEWORK_PUSH_SUMMARY` | 同步成功后是否推送数据汇总；同步失败通知、登录二维码不受影响 |
 | `JOB_TIMES_PER_DAY` | 每天定时同步次数：`1` 或 `2`（默认） |
-| `HA_REPUBLISH_INTERVAL_MINUTES` | 旧配置，仍兼容；原版已新增同类配置 `REPUBLISH_INTERVAL_MINUTES`（推荐改用） |
 | `LLM_TIMEOUT` / `LLM_MAX_RETRIES` / `LLM_MAX_TOKENS` | 大模型识别验证码的超时、重试次数、最大输出长度；兼容只接受 `max_completion_tokens` 的模型 |
 | `JOB_START_TIME=off` | 关闭内部定时同步，启动时也不登录国网，改由外部程序调用接口按需触发（见下方「外部触发同步」）；Web 控制台仍可手动同步 |
 | `FETCH_RUN_RETRY_WAIT_MINUTES` | 外部触发要求整轮重试时，两轮之间等待的分钟数（默认 10） |
